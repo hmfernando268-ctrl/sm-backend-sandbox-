@@ -68,7 +68,7 @@ def actualizar_cita(
         cita.notas_doctor = data.notas_doctor
     if data.motivo is not None:
         cita.motivo = data.motivo
-    # Asignación explícita de doctor (admin puede asignar a cualquiera)
+    # Asignación explícita (admin puede asignar a cualquiera)
     if data.doctor_id is not None:
         cita.doctor_id = data.doctor_id
 

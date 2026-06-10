@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, date
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 import uuid
 
@@ -85,6 +85,28 @@ def get_me(doctor=Depends(get_current_doctor)):
     }
 
 
+# ── ENDPOINT PÚBLICO: listar doctores de un consultorio ──────
+@router.get("/publico/{slug}/doctores")
+def doctores_publicos(slug: str, db: Session = Depends(get_db)):
+    """Lista los doctores activos de un consultorio por su slug. Público."""
+    consultorio = db.query(Consultorio).filter(Consultorio.slug == slug).first()
+    if not consultorio:
+        raise HTTPException(status_code=404, detail="Consultorio no encontrado")
+    doctores = db.query(Doctor).filter(
+        Doctor.consultorio_id == consultorio.id,
+        Doctor.activo == True,
+    ).order_by(Doctor.nombre).all()
+    return [
+        {
+            "id": str(d.id),
+            "nombre": d.nombre,
+            "apellido": d.apellido,
+            "especialidad": d.especialidad,
+        }
+        for d in doctores
+    ]
+
+
 # ── ENDPOINT PÚBLICO: solicitud de cita ─────────────────────
 class SolicitudCitaPublica(BaseModel):
     consultorio_slug: str
@@ -92,53 +114,81 @@ class SolicitudCitaPublica(BaseModel):
     apellido: str
     email: Optional[str] = None
     telefono: Optional[str] = None
-    fecha_solicitada: datetime
+    fecha_solicitada: str          # llega como string del datetime-local
     motivo: str
+    doctor_id: Optional[uuid.UUID] = None
+
 
 @router.post("/publico/solicitar-cita", status_code=201)
-def solicitar_cita_publica(data: SolicitudCitaPublica, db: Session = Depends(get_db)):
+def solicitar_cita_publica(
+    data: SolicitudCitaPublica,
+    db: Session = Depends(get_db),
+):
     """
-    Endpoint público — no requiere autenticación.
-    El paciente llena un formulario y queda registrado con estado 'pendiente'.
+    Crea una solicitud de cita desde el portal público (sin autenticación).
+    - Si el paciente ya existe (match por email o teléfono), se respeta su
+      doctor de cabecera.
+    - Si es nuevo, el doctor elegido queda como su doctor de cabecera.
     """
+    # Resolver el consultorio por slug
     consultorio = db.query(Consultorio).filter(
-        Consultorio.slug == data.consultorio_slug,
-        Consultorio.activo == True,
+        Consultorio.slug == data.consultorio_slug
     ).first()
     if not consultorio:
         raise HTTPException(status_code=404, detail="Consultorio no encontrado")
 
-    # Buscar o crear paciente por email/teléfono
+    # Buscar paciente existente por email o teléfono dentro del consultorio
     paciente = None
     if data.email:
         paciente = db.query(Paciente).filter(
             Paciente.consultorio_id == consultorio.id,
             Paciente.email == data.email,
         ).first()
+    if not paciente and data.telefono:
+        paciente = db.query(Paciente).filter(
+            Paciente.consultorio_id == consultorio.id,
+            Paciente.telefono == data.telefono,
+        ).first()
 
-    if not paciente:
+    if paciente:
+        # Paciente EXISTENTE → se respeta su doctor de cabecera
+        doctor_asignado = paciente.doctor_cabecera_id
+    else:
+        # Paciente NUEVO → el doctor elegido queda como su cabecera
+        doctor_asignado = data.doctor_id
         paciente = Paciente(
             consultorio_id=consultorio.id,
             nombre=data.nombre,
             apellido=data.apellido,
             email=data.email,
             telefono=data.telefono,
+            doctor_cabecera_id=data.doctor_id,
         )
         db.add(paciente)
-        db.flush()
+        db.flush()  # obtiene paciente.id sin cerrar la transacción
+
+    # Parsear la fecha (string local, sin conversión UTC)
+    try:
+        fecha = datetime.strptime(
+            data.fecha_solicitada.replace('T', ' ')[:16], '%Y-%m-%d %H:%M'
+        )
+    except ValueError:
+        fecha = datetime.utcnow()
 
     cita = Cita(
         consultorio_id=consultorio.id,
         paciente_id=paciente.id,
-        fecha_solicitada=data.fecha_solicitada,
+        doctor_id=doctor_asignado,   # puede ser None si nadie fue elegido
+        fecha_solicitada=fecha,
         motivo=data.motivo,
         estado="pendiente",
     )
     db.add(cita)
     db.commit()
+    db.refresh(cita)
 
     return {
-        "mensaje": "Cita solicitada correctamente",
+        "mensaje": "Solicitud de cita recibida",
         "cita_id": str(cita.id),
-        "estado": "pendiente",
+        "paciente": f"{paciente.nombre} {paciente.apellido}",
     }

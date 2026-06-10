@@ -12,7 +12,7 @@ class PacienteCreate(BaseModel):
     sexo: Optional[str] = None
     alergias: Optional[str] = None
     notas_generales: Optional[str] = None
-    doctor_cabecera_id: Optional[uuid.UUID] = None  # ← nuevo
+    doctor_cabecera_id: Optional[uuid.UUID] = None
 
 class PacienteUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -21,12 +21,12 @@ class PacienteUpdate(BaseModel):
     telefono: Optional[str] = None
     alergias: Optional[str] = None
     notas_generales: Optional[str] = None
-    doctor_cabecera_id: Optional[uuid.UUID] = None  # ← nuevo
+    doctor_cabecera_id: Optional[uuid.UUID] = None
 
 class PacienteResponse(BaseModel):
     id: uuid.UUID
     consultorio_id: uuid.UUID
-    doctor_cabecera_id: Optional[uuid.UUID] = None  # ← nuevo
+    doctor_cabecera_id: Optional[uuid.UUID] = None
     nombre: str
     apellido: str
     email: Optional[str] = None
