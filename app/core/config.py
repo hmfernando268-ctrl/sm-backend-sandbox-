@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     N8N_WEBHOOK_SECRET: str = ""
     ENCRYPTION_KEY: str = ""  # ← Nuevo: clave Fernet para cifrado
     ALLOWED_ORIGINS: str = "http://localhost:3000"
-    BACKUP_SECRET: str = ""
+    BACKUP_SECRET: str = "" #
 
     class Config:
         env_file = ".env"
